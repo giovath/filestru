@@ -29,3 +29,6 @@ src-tauri/target/
 # Local updater signing keys
 *.key
 .filestru/
+
+# Release artifacts
+latest.json
