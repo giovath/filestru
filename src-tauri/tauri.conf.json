@@ -37,6 +37,9 @@
 "plugins": {
   "updater": {
     "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGODIwQTEwNTc1MDk3OUYKUldTZmwxQlhFQXFDdjJKb3ZyRmtaSEovZWFBVTczZ2JoZU9hcm50aGJTNzN1dWtTMWE4OERKZFgK",
+    "endpoints": [
+      "https://github.com/giovath/filestru/releases/latest/download/latest.json"
+    ],
     "requireSignedVersion": true
   }
 }

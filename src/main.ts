@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { desktopDir } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 
+import { check } from "@tauri-apps/plugin-updater";
+
 interface FileSystemItem {
   name: string;
   path: string;
@@ -1013,6 +1015,36 @@ async function analyzeSelectedDirectory(): Promise<void> {
   }
 }
 
+async function checkForUpdates(): Promise<void> {
+  try {
+    const update = await check();
+
+    if (!update) {
+      window.alert("Você já está usando a versão mais recente do FileStru.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Uma nova versão do FileStru está disponível: ${update.version}\n\n` +
+      `Versão atual: ${update.currentVersion}\n\n` +
+      `${update.body || "Uma nova versão está disponível."}\n\n` +
+      `Deseja instalar agora?`,
+    );
+
+    if (!confirmed) {
+      await update.close();
+      return;
+    }
+
+    await update.downloadAndInstall();
+  } catch (error) {
+    console.error("Erro ao verificar atualização:", error);
+    window.alert(
+      "Não foi possível verificar atualizações. Consulte o console para mais detalhes.",
+    );
+  }
+}
+
 window.addEventListener(
   "DOMContentLoaded",
   async () => {
@@ -1030,6 +1062,11 @@ window.addEventListener(
       document.querySelector<HTMLButtonElement>(
         "#analyze-directory-button"
       );
+
+    const checkUpdatesButton =
+      document.querySelector<HTMLButtonElement>("#check-updates-button");
+
+    checkUpdatesButton?.addEventListener("click", checkForUpdates);
 
     analyzeDirectoryButton?.addEventListener(
       "click",
