@@ -1,0 +1,68 @@
+<!doctype html>
+
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link rel="stylesheet" href="/src/styles.css" />
+
+  <title>FileStru</title>
+
+  <script type="module" src="/src/main.ts" defer></script>
+
+</head>
+
+<body>
+  <main class="container">
+    <header class="app-header">
+      <h1>FileStru</h1>
+      <p>Seu espaço local para documentos.</p>
+    </header>
+
+    <section class="workspace-section">
+      <div class="section-header">
+        <h2>Seu workspace</h2>
+        <p>Locais acompanhados pelo aplicativo.</p>
+      </div>
+
+      <section id="directory-picker" class="directory-picker">
+        <div>
+          <span class="section-eyebrow">Organizar uma pasta</span>
+
+          <h2>Escolha o diretório que deseja analisar.</h2>
+
+          <p id="selected-directory">
+            Nenhuma pasta selecionada.
+          </p>
+        </div>
+
+        <div class="directory-actions">
+          <button id="choose-directory-button" type="button">
+            Escolher pasta
+          </button>
+
+          <button id="analyze-directory-button" type="button">
+            Analisar pasta
+          </button>
+        </div>
+      </section>
+
+      <div id="workspace" class="workspace-grid"></div>
+    </section>
+
+    <section class="organization-section">
+      <div id="organization-plan"></div>
+    </section>
+
+    <section class="status-section">
+      <h2>Status</h2>
+      <p id="app-status">Carregando...</p>
+    </section>
+
+
+  </main>
+</body>
+
+</html>
