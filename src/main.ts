@@ -1,8 +1,56 @@
 import { invoke } from "@tauri-apps/api/core";
 import { desktopDir } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
-
 import { check } from "@tauri-apps/plugin-updater";
+
+import { en } from "./i18n/en";
+import { ptBR } from "./i18n/pt-BR";
+
+import { track } from "./telemetry";
+
+const translations = {
+  en,
+  "pt-BR": ptBR,
+} as const;
+
+type Language = keyof typeof translations;
+
+function detectLanguage(): Language {
+  const browserLanguage = navigator.language.toLowerCase();
+
+  return browserLanguage.startsWith("pt-br")
+    ? "pt-BR"
+    : "en";
+}
+
+let currentLanguage: Language = detectLanguage();
+
+void track("app_opened");
+
+function t(
+  key: keyof typeof en,
+  replacements?: Record<string, string | number>,
+): string {
+  let value: string =
+    translations[currentLanguage][key];
+
+  if (replacements) {
+    for (const [placeholder, replacement] of Object.entries(
+      replacements,
+    )) {
+      value = value.replace(
+        `{${placeholder}}`,
+        String(replacement),
+      );
+    }
+  }
+
+  return value;
+}
+
+function formatNumber(value: number): string {
+  return value.toLocaleString(currentLanguage);
+}
 
 interface FileSystemItem {
   name: string;
@@ -69,20 +117,30 @@ function formatBytes(bytes: number): string {
   }
 
   const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.floor(Math.log(bytes) / Math.log(1024));
+  const index = Math.floor(
+    Math.log(bytes) / Math.log(1024),
+  );
 
-  return `${(bytes / Math.pow(1024, index)).toFixed(2)} ${units[index]}`;
+  return `${(
+    bytes / Math.pow(1024, index)
+  ).toFixed(2)} ${units[index]}`;
 }
 
 function getLocationName(path: string): string {
-  const normalizedPath = path.replace(/\\/g, "/").replace(/\/$/, "");
+  const normalizedPath = path
+    .replace(/\\/g, "/")
+    .replace(/\/$/, "");
+
   const parts = normalizedPath.split("/");
 
   return parts[parts.length - 1] || path;
 }
 
 function getDestinationFolder(path: string): string {
-  const normalizedPath = path.replace(/\\/g, "/").replace(/\/$/, "");
+  const normalizedPath = path
+    .replace(/\\/g, "/")
+    .replace(/\/$/, "");
+
   const parts = normalizedPath.split("/");
 
   return parts[parts.length - 2] || path;
@@ -96,13 +154,21 @@ function getFileName(path: string): string {
 }
 
 function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/$/, "")
+    .toLowerCase();
 }
 
-function buildDirectoryTree(scan: ScanResult): string {
+function buildDirectoryTree(
+  scan: ScanResult,
+): string {
   const rootName = getLocationName(scan.location);
 
-  const childrenByParent = new Map<string, FileSystemItem[]>();
+  const childrenByParent = new Map<
+    string,
+    FileSystemItem[]
+  >();
 
   for (const item of scan.items) {
     if (!item.parent_path) {
@@ -110,7 +176,8 @@ function buildDirectoryTree(scan: ScanResult): string {
     }
 
     const parentKey = normalizePath(item.parent_path);
-    const children = childrenByParent.get(parentKey) || [];
+    const children =
+      childrenByParent.get(parentKey) || [];
 
     children.push(item);
     childrenByParent.set(parentKey, children);
@@ -122,27 +189,44 @@ function buildDirectoryTree(scan: ScanResult): string {
         return a.kind === "directory" ? -1 : 1;
       }
 
-      return a.name.localeCompare(b.name, "pt-BR");
+      return a.name.localeCompare(
+        b.name,
+        currentLanguage,
+      );
     });
   }
 
   const lines: string[] = [rootName];
 
-  function appendChildren(parentPath: string, prefix: string): void {
+  function appendChildren(
+    parentPath: string,
+    prefix: string,
+  ): void {
     const children =
-      childrenByParent.get(normalizePath(parentPath)) || [];
+      childrenByParent.get(
+        normalizePath(parentPath),
+      ) || [];
 
     children.forEach((item, index) => {
-      const isLast = index === children.length - 1;
-      const branch = isLast ? "└── " : "├── ";
-      const childPrefix = isLast ? "    " : "│   ";
+      const isLast =
+        index === children.length - 1;
 
-      lines.push(`${prefix}${branch}${item.name}`);
+      const branch = isLast
+        ? "└── "
+        : "├── ";
+
+      const childPrefix = isLast
+        ? "    "
+        : "│   ";
+
+      lines.push(
+        `${prefix}${branch}${item.name}`,
+      );
 
       if (item.kind === "directory") {
         appendChildren(
           item.path,
-          `${prefix}${childPrefix}`
+          `${prefix}${childPrefix}`,
         );
       }
     });
@@ -159,61 +243,80 @@ async function copySelectedDirectoryStructure(): Promise<void> {
   }
 
   const structure = buildDirectoryTree(
-    selectedDirectoryScan
+    selectedDirectoryScan,
   );
 
   try {
-    await navigator.clipboard.writeText(structure);
+    await navigator.clipboard.writeText(
+      structure,
+    );
 
     const appStatusEl =
       document.querySelector("#app-status");
 
     if (appStatusEl) {
-      appStatusEl.textContent =
-        "📋 Estrutura copiada para a área de transferência";
+      appStatusEl.textContent = t(
+        "copyStructureSuccess",
+      );
     }
 
     console.log(
-      "Estrutura copiada:",
-      structure
+      t("structureCopied"),
+      structure,
     );
   } catch (error) {
     console.error(
-      "Erro ao copiar estrutura:",
-      error
+      t("copyStructureError"),
+      error,
     );
 
     window.alert(
-      "❌ Não foi possível copiar a estrutura para a área de transferência."
+      t("copyStructureFailed"),
     );
   }
 }
 
-let currentWorkspaceScan: WorkspaceScan | null = null;
+let currentWorkspaceScan:
+  | WorkspaceScan
+  | null = null;
+
 let selectedDirectory: string | null = null;
-let selectedDirectoryScan: ScanResult | null = null;
-let currentOrganizationPlan: OrganizationPlan | null = null;
+
+let selectedDirectoryScan:
+  | ScanResult
+  | null = null;
+
+let currentOrganizationPlan:
+  | OrganizationPlan
+  | null = null;
 
 function createLocationCard(
   location: ScanResult,
   type: "tracked" | "selected",
-  status?: string
+  status?: string,
 ): HTMLElement {
-  const card = document.createElement("article");
+  const card =
+    document.createElement("article");
 
   card.className = "location-card";
 
-  if (type === "selected" && !location.location) {
+  if (
+    type === "selected" &&
+    !location.location
+  ) {
     card.innerHTML = `
       <div class="location-header">
         <div>
-          <span class="section-eyebrow">📂 Pasta selecionada</span>
-          <h3>Nenhuma pasta selecionada</h3>
+          <span class="section-eyebrow">
+            ${t("selectedFolder")}
+          </span>
+
+          <h3>${t("noFolderSelected")}</h3>
         </div>
       </div>
 
       <p class="location-empty">
-        Escolha uma pasta acima para analisar e organizar seus arquivos.
+        ${t("chooseFolderDescription")}
       </p>
     `;
 
@@ -222,8 +325,8 @@ function createLocationCard(
 
   const eyebrow =
     type === "tracked"
-      ? "📍 Local acompanhado"
-      : "📂 Pasta selecionada";
+      ? t("trackedLocation")
+      : t("selectedLocation");
 
   const statusHtml = status
     ? `
@@ -238,7 +341,7 @@ function createLocationCard(
       ? `
         <div class="location-actions">
           <button id="copy-structure-button" type="button">
-            📋 Copiar estrutura
+            ${t("copyStructure")}
           </button>
         </div>
       `
@@ -247,27 +350,45 @@ function createLocationCard(
   card.innerHTML = `
     <div class="location-header">
       <div>
-        <span class="section-eyebrow">${eyebrow}</span>
-        <h3>${getLocationName(location.location)}</h3>
+        <span class="section-eyebrow">
+          ${eyebrow}
+        </span>
+
+        <h3>
+          ${getLocationName(location.location)}
+        </h3>
       </div>
 
-      <span class="location-path">${location.location}</span>
+      <span class="location-path">
+        ${location.location}
+      </span>
     </div>
 
     <div class="location-stats">
       <div>
-        <strong>${location.total_files.toLocaleString("pt-BR")}</strong>
-        <span>arquivos</span>
+        <strong>
+          ${formatNumber(location.total_files)}
+        </strong>
+
+        <span>${t("files")}</span>
       </div>
 
       <div>
-        <strong>${location.total_directories.toLocaleString("pt-BR")}</strong>
-        <span>pastas</span>
+        <strong>
+          ${formatNumber(
+    location.total_directories,
+  )}
+        </strong>
+
+        <span>${t("folders")}</span>
       </div>
 
       <div>
-        <strong>${formatBytes(location.total_size)}</strong>
-        <span>ocupado</span>
+        <strong>
+          ${formatBytes(location.total_size)}
+        </strong>
+
+        <span>${t("occupied")}</span>
       </div>
     </div>
 
@@ -279,12 +400,12 @@ function createLocationCard(
   if (type === "selected") {
     const copyButton =
       card.querySelector<HTMLButtonElement>(
-        "#copy-structure-button"
+        "#copy-structure-button",
       );
 
     copyButton?.addEventListener(
       "click",
-      copySelectedDirectoryStructure
+      copySelectedDirectoryStructure,
     );
   }
 
@@ -292,9 +413,13 @@ function createLocationCard(
 }
 
 function renderWorkspace(): void {
-  const workspaceEl = document.querySelector("#workspace");
+  const workspaceEl =
+    document.querySelector("#workspace");
 
-  if (!workspaceEl || !currentWorkspaceScan) {
+  if (
+    !workspaceEl ||
+    !currentWorkspaceScan
+  ) {
     return;
   }
 
@@ -307,8 +432,8 @@ function renderWorkspace(): void {
     workspaceEl.appendChild(
       createLocationCard(
         desktopLocation,
-        "tracked"
-      )
+        "tracked",
+      ),
     );
   }
 
@@ -317,23 +442,26 @@ function renderWorkspace(): void {
 
     if (currentOrganizationPlan) {
       const hasChanges =
-        currentOrganizationPlan.summary.files_to_move > 0 ||
-        currentOrganizationPlan.summary.files_to_rename > 0 ||
-        currentOrganizationPlan.summary.directories_to_create > 0;
+        currentOrganizationPlan.summary
+          .files_to_move > 0 ||
+        currentOrganizationPlan.summary
+          .files_to_rename > 0 ||
+        currentOrganizationPlan.summary
+          .directories_to_create > 0;
 
       status = hasChanges
-        ? "🔎 Análise concluída"
-        : "✅ Tudo organizado";
+        ? t("analysisCompleted")
+        : t("everythingOrganized");
     } else {
-      status = "📁 Pasta selecionada";
+      status = t("selectedFolderStatus");
     }
 
     workspaceEl.appendChild(
       createLocationCard(
         selectedDirectoryScan,
         "selected",
-        status
-      )
+        status,
+      ),
     );
   } else {
     workspaceEl.appendChild(
@@ -345,19 +473,21 @@ function renderWorkspace(): void {
           total_directories: 0,
           total_size: 0,
         },
-        "selected"
-      )
+        "selected",
+      ),
     );
   }
 }
 
 function renderOrganizationPlan(
-  plan: OrganizationPlan
+  plan: OrganizationPlan,
 ): void {
   currentOrganizationPlan = plan;
 
   const planEl =
-    document.querySelector("#organization-plan");
+    document.querySelector(
+      "#organization-plan",
+    );
 
   if (!planEl) {
     return;
@@ -368,13 +498,13 @@ function renderOrganizationPlan(
   const moveOperations =
     plan.operations.filter(
       (operation) =>
-        operation.operation_type === "move"
+        operation.operation_type === "move",
     );
 
   const conflictOperations =
     moveOperations.filter(
       (operation) =>
-        operation.status === "conflict"
+        operation.status === "conflict",
     );
 
   const hasChanges =
@@ -393,30 +523,31 @@ function renderOrganizationPlan(
 
     emptyState.innerHTML = `
       <div class="plan-intro">
-        <span class="section-eyebrow">✅ Tudo organizado</span>
+        <span class="section-eyebrow">
+          ${t("everythingOrganized")}
+        </span>
 
-        <h2>Nenhuma alteração necessária.</h2>
+        <h2>${t("noChangesTitle")}</h2>
 
         <p>
-          O FileStru analisou esta pasta e não encontrou arquivos
-          que precisem ser reorganizados.
+          ${t("noChangesDescription")}
         </p>
       </div>
 
       <div class="plan-metrics">
         <div class="metric-card">
           <strong>0</strong>
-          <span>arquivos para organizar</span>
+          <span>${t("filesToOrganize")}</span>
         </div>
 
         <div class="metric-card">
           <strong>0</strong>
-          <span>pastas novas</span>
+          <span>${t("newFolders")}</span>
         </div>
 
         <div class="metric-card">
           <strong>0</strong>
-          <span>conflitos encontrados</span>
+          <span>${t("conflictsFound")}</span>
         </div>
       </div>
     `;
@@ -432,18 +563,18 @@ function renderOrganizationPlan(
   for (const operation of moveOperations) {
     const folder =
       getDestinationFolder(
-        operation.destination
+        operation.destination,
       );
 
     folderCounts.set(
       folder,
-      (folderCounts.get(folder) || 0) + 1
+      (folderCounts.get(folder) || 0) + 1,
     );
   }
 
   const sortedFolders =
     Array.from(folderCounts.entries()).sort(
-      (a, b) => b[1] - a[1]
+      (a, b) => b[1] - a[1],
     );
 
   const summary =
@@ -454,41 +585,64 @@ function renderOrganizationPlan(
 
   summary.innerHTML = `
     <div class="plan-intro">
-      <span class="section-eyebrow">🧠 Sugestão de organização</span>
+      <span class="section-eyebrow">
+        ${t("organizationSuggestion")}
+      </span>
 
-      <h2>Encontramos uma forma de organizar esta pasta.</h2>
+      <h2>
+        ${t("organizationSuggestionTitle")}
+      </h2>
 
       <p>
-        O FileStru analisou os arquivos e preparou uma sugestão.
-        Nenhum arquivo será alterado sem sua confirmação.
+        ${t("organizationSuggestionDescription")}
       </p>
     </div>
 
     <div class="plan-metrics">
       <div class="metric-card">
-        <strong>${plan.summary.files_to_move.toLocaleString("pt-BR")}</strong>
-        <span>arquivos para organizar</span>
+        <strong>
+          ${formatNumber(
+    plan.summary.files_to_move,
+  )}
+        </strong>
+
+        <span>${t("filesToOrganize")}</span>
       </div>
 
       <div class="metric-card">
-        <strong>${plan.summary.directories_to_create.toLocaleString("pt-BR")}</strong>
-        <span>pastas novas</span>
+        <strong>
+          ${formatNumber(
+    plan.summary.directories_to_create,
+  )}
+        </strong>
+
+        <span>${t("newFolders")}</span>
       </div>
 
       <div class="metric-card ${conflictOperations.length > 0
       ? "attention"
       : ""
     }">
-        <strong>${conflictOperations.length.toLocaleString("pt-BR")}</strong>
-        <span>conflitos encontrados</span>
+        <strong>
+          ${formatNumber(
+      conflictOperations.length,
+    )}
+        </strong>
+
+        <span>${t("conflictsFound")}</span>
       </div>
     </div>
 
     <div class="organization-groups">
       <div class="groups-header">
         <div>
-          <span class="section-eyebrow">📋 Resumo</span>
-          <h3>Como os arquivos seriam organizados</h3>
+          <span class="section-eyebrow">
+            ${t("summary")}
+          </span>
+
+          <h3>
+            ${t("howFilesWouldBeOrganized")}
+          </h3>
         </div>
       </div>
 
@@ -501,16 +655,17 @@ function renderOrganizationPlan(
 
                 <div>
                   <strong>${folder}</strong>
+
                   <span>
-                    ${count.toLocaleString("pt-BR")}
+                    ${formatNumber(count)}
                     ${count === 1
-            ? "arquivo"
-            : "arquivos"
+            ? t("file")
+            : t("files")
           }
                   </span>
                 </div>
               </div>
-            `
+            `,
       )
       .join("")}
       </div>
@@ -521,17 +676,18 @@ function renderOrganizationPlan(
           <div class="attention-panel">
             <div>
               <strong>
-                ⚠️ ${conflictOperations.length}
-                ${conflictOperations.length === 1
-        ? "item precisa"
-        : "itens precisam"
+                ⚠️
+                ${conflictOperations.length}
+                ${conflictOperations.length ===
+        1
+        ? t("attentionItem")
+        : t("attentionItems")
       }
-                de atenção.
+                ${t("attention")}
               </strong>
 
               <p>
-                Existem arquivos no destino que precisam ser avaliados antes
-                de qualquer execução.
+                ${t("attentionDescription")}
               </p>
             </div>
           </div>
@@ -540,8 +696,11 @@ function renderOrganizationPlan(
     }
 
     <div class="plan-actions">
-      <button id="review-plan-button" type="button">
-        🔎 Revisar organização
+      <button
+        id="review-plan-button"
+        type="button"
+      >
+        ${t("reviewOrganization")}
       </button>
 
       <button
@@ -552,13 +711,13 @@ function renderOrganizationPlan(
       : ""
     }
       >
-        ✨ Organizar arquivos
+        ${t("organizeFiles")}
       </button>
 
       <span>
         ${conflictOperations.length > 0
-      ? "⚠️ Resolva os conflitos antes de executar."
-      : "🔒 Nenhum arquivo será alterado sem sua confirmação."
+      ? t("resolveConflicts")
+      : t("confirmationNotice")
     }
       </span>
     </div>
@@ -577,12 +736,16 @@ function renderOrganizationPlan(
 
   reviewSection.innerHTML = `
     <div class="review-header">
-      <span class="section-eyebrow">🔎 Detalhamento</span>
+      <span class="section-eyebrow">
+        ${t("details")}
+      </span>
 
-      <h3>Operações propostas</h3>
+      <h3>
+        ${t("proposedOperations")}
+      </h3>
 
       <p>
-        Confira cada alteração antes que qualquer arquivo seja modificado.
+        ${t("reviewDescription")}
       </p>
     </div>
   `;
@@ -602,7 +765,7 @@ function renderOrganizationPlan(
   for (const operation of moveOperations) {
     const folder =
       getDestinationFolder(
-        operation.destination
+        operation.destination,
       );
 
     const operations =
@@ -612,26 +775,27 @@ function renderOrganizationPlan(
 
     operationsByFolder.set(
       folder,
-      operations
+      operations,
     );
   }
 
   const orderedFolders =
     Array.from(
-      operationsByFolder.entries()
+      operationsByFolder.entries(),
     ).sort(
       (a, b) =>
-        b[1].length - a[1].length
+        b[1].length - a[1].length,
     );
 
   if (
-    plan.summary.directories_to_create > 0
+    plan.summary.directories_to_create >
+    0
   ) {
     const directories =
       plan.operations.filter(
         (operation) =>
           operation.operation_type ===
-          "create_directory"
+          "create_directory",
       );
 
     const directoryCard =
@@ -646,19 +810,25 @@ function renderOrganizationPlan(
           <span class="group-icon">+</span>
 
           <div>
-            <strong>📁 Pastas novas</strong>
+            <strong>
+              ${t("newFoldersLabel")}
+            </strong>
 
             <span>
-              ${directories.length.toLocaleString("pt-BR")}
+              ${formatNumber(
+      directories.length,
+    )}
               ${directories.length === 1
-        ? "pasta será criada"
-        : "pastas serão criadas"
+        ? t("folderWillBeCreated")
+        : t("foldersWillBeCreated")
       }
             </span>
           </div>
         </div>
 
-        <span class="group-status">✓ Pronto</span>
+        <span class="group-status">
+          ${t("ready")}
+        </span>
       </div>
 
       <div class="operation-group-content">
@@ -667,16 +837,18 @@ function renderOrganizationPlan(
           (operation) => `
               <div class="directory-item">
                 <span>↳</span>
-                <span>${operation.destination}</span>
+                <span>
+                  ${operation.destination}
+                </span>
               </div>
-            `
+            `,
         )
         .join("")}
       </div>
     `;
 
     operationsList.appendChild(
-      directoryCard
+      directoryCard,
     );
   }
 
@@ -693,16 +865,18 @@ function renderOrganizationPlan(
     const groupConflicts =
       operations.filter(
         (operation) =>
-          operation.status === "conflict"
+          operation.status === "conflict",
       ).length;
 
     const statusLabel =
       groupConflicts > 0
-        ? `⚠️ ${groupConflicts} ${groupConflicts === 1
-          ? "conflito"
-          : "conflitos"
+        ? `⚠️ ${formatNumber(
+          groupConflicts,
+        )} ${groupConflicts === 1
+          ? t("conflict")
+          : t("conflicts")
         }`
-        : "✓ Pronto";
+        : t("ready");
 
     group.innerHTML = `
       <summary class="operation-group-header">
@@ -713,19 +887,23 @@ function renderOrganizationPlan(
             <strong>${folder}</strong>
 
             <span>
-              ${operations.length.toLocaleString("pt-BR")}
+              ${formatNumber(
+      operations.length,
+    )}
               ${operations.length === 1
-        ? "arquivo"
-        : "arquivos"
+        ? t("file")
+        : t("files")
       }
             </span>
           </div>
         </div>
 
-        <span class="group-status ${groupConflicts > 0
+        <span
+          class="group-status ${groupConflicts > 0
         ? "conflict"
         : ""
-      }">
+      }"
+        >
           ${statusLabel}
         </span>
       </summary>
@@ -734,10 +912,13 @@ function renderOrganizationPlan(
         ${operations
         .map(
           (operation) => `
-              <div class="file-operation ${operation.status === "conflict"
+              <div
+                class="file-operation ${operation.status ===
+              "conflict"
               ? "conflict"
               : ""
-            }">
+            }"
+              >
                 <div class="file-operation-header">
                   <strong>
                     ${operation.status ===
@@ -745,17 +926,18 @@ function renderOrganizationPlan(
               ? "⚠️"
               : "✓"
             }
+
                     ${getFileName(
               operation.source ||
-              "Arquivo"
+              t("fileLabel"),
             )}
                   </strong>
 
                   <span>
                     ${operation.status ===
               "conflict"
-              ? "Conflito"
-              : "Pronto"
+              ? t("conflictTitle")
+              : t("readyTitle")
             }
                   </span>
                 </div>
@@ -766,7 +948,7 @@ function renderOrganizationPlan(
               : ""
             }
               </div>
-            `
+            `,
         )
         .join("")}
       </div>
@@ -776,16 +958,14 @@ function renderOrganizationPlan(
   }
 
   reviewSection.appendChild(
-    operationsList
+    operationsList,
   );
 
-  planEl.appendChild(
-    reviewSection
-  );
+  planEl.appendChild(reviewSection);
 
   const reviewButton =
     document.querySelector(
-      "#review-plan-button"
+      "#review-plan-button",
     );
 
   reviewButton?.addEventListener(
@@ -795,12 +975,12 @@ function renderOrganizationPlan(
         behavior: "smooth",
         block: "start",
       });
-    }
+    },
   );
 
   const executeButton =
     document.querySelector<HTMLButtonElement>(
-      "#execute-plan-button"
+      "#execute-plan-button",
     );
 
   executeButton?.addEventListener(
@@ -812,7 +992,14 @@ function renderOrganizationPlan(
 
       const confirmed =
         window.confirm(
-          `✨ O FileStru vai organizar ${currentOrganizationPlan.summary.files_to_move} arquivos e criar ${currentOrganizationPlan.summary.directories_to_create} pastas.\n\nNenhum arquivo será excluído.\n\nDeseja continuar?`
+          t("confirmOrganization", {
+            files:
+              currentOrganizationPlan.summary
+                .files_to_move,
+            folders:
+              currentOrganizationPlan.summary
+                .directories_to_create,
+          }),
         );
 
       if (!confirmed) {
@@ -820,8 +1007,9 @@ function renderOrganizationPlan(
       }
 
       executeButton.disabled = true;
+
       executeButton.textContent =
-        "⏳ Organizando...";
+        t("organizing");
 
       try {
         const result =
@@ -830,25 +1018,27 @@ function renderOrganizationPlan(
             {
               plan:
                 currentOrganizationPlan,
-            }
+            },
           );
 
         console.log(
-          "Resultado da execução:",
-          result
+          t("executionResult"),
+          result,
         );
 
         if (result.failed > 0) {
           window.alert(
-            `⚠️ Organização concluída com algumas falhas.\n\n` +
-            `✅ Executadas: ${result.executed}\n` +
-            `⏭️ Ignoradas: ${result.skipped}\n` +
-            `❌ Falhas: ${result.failed}`
+            `${t("executionPartial")}\n\n` +
+            `${t("executed")} ${result.executed}\n` +
+            `${t("skipped")} ${result.skipped}\n` +
+            `${t("failed")} ${result.failed}`,
           );
         } else {
           window.alert(
-            `✅ Organização concluída!\n\n` +
-            `${result.executed} operações executadas com sucesso.`
+            `${t("executionSuccess")}\n\n` +
+            `${result.executed} ${t(
+              "operationsExecuted",
+            )}`,
           );
         }
 
@@ -859,28 +1049,27 @@ function renderOrganizationPlan(
               {
                 path:
                   selectedDirectory,
-              }
+              },
             );
 
           renderWorkspace();
         }
       } catch (error) {
         console.error(
-          "Erro ao executar organização:",
-          error
+          t("executionError"),
+          error,
         );
 
         window.alert(
-          "❌ Não foi possível executar a organização dos arquivos."
+          t("executionFailed"),
         );
       } finally {
-        executeButton.disabled =
-          false;
+        executeButton.disabled = false;
 
         executeButton.textContent =
-          "✨ Organizar arquivos";
+          t("organizeFiles");
       }
-    }
+    },
   );
 }
 
@@ -889,8 +1078,7 @@ async function chooseDirectory(): Promise<void> {
     await open({
       directory: true,
       multiple: false,
-      title:
-        "Escolha uma pasta para organizar",
+      title: t("chooseFolder"),
     });
 
   if (
@@ -907,7 +1095,7 @@ async function chooseDirectory(): Promise<void> {
 
   const selectedDirectoryEl =
     document.querySelector(
-      "#selected-directory"
+      "#selected-directory",
     );
 
   if (selectedDirectoryEl) {
@@ -917,7 +1105,7 @@ async function chooseDirectory(): Promise<void> {
 
   const planEl =
     document.querySelector(
-      "#organization-plan"
+      "#organization-plan",
     );
 
   if (planEl) {
@@ -930,16 +1118,16 @@ async function chooseDirectory(): Promise<void> {
         "scan_directory",
         {
           path: selectedPath,
-        }
+        },
       );
   } catch (error) {
     console.error(
-      "Erro ao escanear pasta selecionada:",
-      error
+      t("scanSelectedFolderError"),
+      error,
     );
 
     window.alert(
-      "❌ Não foi possível carregar as informações da pasta selecionada."
+      t("loadWorkspaceFailed"),
     );
 
     return;
@@ -948,15 +1136,15 @@ async function chooseDirectory(): Promise<void> {
   renderWorkspace();
 
   console.log(
-    "Pasta selecionada:",
-    selectedPath
+    t("selectedFolderLabel"),
+    selectedPath,
   );
 }
 
 async function analyzeSelectedDirectory(): Promise<void> {
   if (!selectedDirectory) {
     window.alert(
-      "📁 Escolha uma pasta antes de iniciar a análise."
+      t("chooseFolderFirst"),
     );
 
     return;
@@ -964,13 +1152,14 @@ async function analyzeSelectedDirectory(): Promise<void> {
 
   const analyzeButton =
     document.querySelector<HTMLButtonElement>(
-      "#analyze-directory-button"
+      "#analyze-directory-button",
     );
 
   if (analyzeButton) {
     analyzeButton.disabled = true;
+
     analyzeButton.textContent =
-      "🔎 Analisando...";
+      t("analyzing");
   }
 
   try {
@@ -980,7 +1169,7 @@ async function analyzeSelectedDirectory(): Promise<void> {
         {
           path:
             selectedDirectory,
-        }
+        },
       );
 
     selectedDirectoryScan =
@@ -989,28 +1178,27 @@ async function analyzeSelectedDirectory(): Promise<void> {
         {
           path:
             selectedDirectory,
-        }
+        },
       );
 
     renderOrganizationPlan(
-      organizationPlan
+      organizationPlan,
     );
   } catch (error) {
     console.error(
-      "Erro ao analisar diretório:",
-      error
+      t("analyzeDirectoryError"),
+      error,
     );
 
     window.alert(
-      "❌ Não foi possível analisar a pasta selecionada."
+      t("analyzeFolderFailed"),
     );
   } finally {
     if (analyzeButton) {
-      analyzeButton.disabled =
-        false;
+      analyzeButton.disabled = false;
 
       analyzeButton.textContent =
-        "🔎 Analisar pasta";
+        t("analyzeFolder");
     }
   }
 }
@@ -1020,16 +1208,23 @@ async function checkForUpdates(): Promise<void> {
     const update = await check();
 
     if (!update) {
-      window.alert("Você já está usando a versão mais recente do FileStru.");
+      window.alert(
+        t("latestVersion"),
+      );
+
       return;
     }
 
-    const confirmed = window.confirm(
-      `Uma nova versão do FileStru está disponível: ${update.version}\n\n` +
-      `Versão atual: ${update.currentVersion}\n\n` +
-      `${update.body || "Uma nova versão está disponível."}\n\n` +
-      `Deseja instalar agora?`,
-    );
+    const confirmed =
+      window.confirm(
+        `${t("updateAvailable")}\n\n` +
+        `${t("currentVersion")} ${update.currentVersion
+        }\n\n` +
+        `${update.body ||
+        t("updateBodyFallback")
+        }\n\n` +
+        `${t("installUpdate")}`,
+      );
 
     if (!confirmed) {
       await update.close();
@@ -1038,9 +1233,13 @@ async function checkForUpdates(): Promise<void> {
 
     await update.downloadAndInstall();
   } catch (error) {
-    console.error("Erro ao verificar atualização:", error);
+    console.error(
+      t("updateCheckError"),
+      error,
+    );
+
     window.alert(
-      "Não foi possível verificar atualizações. Consulte o console para mais detalhes.",
+      t("updateCheckFailed"),
     );
   }
 }
@@ -1050,27 +1249,32 @@ window.addEventListener(
   async () => {
     const chooseDirectoryButton =
       document.querySelector<HTMLButtonElement>(
-        "#choose-directory-button"
+        "#choose-directory-button",
       );
 
     chooseDirectoryButton?.addEventListener(
       "click",
-      chooseDirectory
+      chooseDirectory,
     );
 
     const analyzeDirectoryButton =
       document.querySelector<HTMLButtonElement>(
-        "#analyze-directory-button"
+        "#analyze-directory-button",
       );
 
     const checkUpdatesButton =
-      document.querySelector<HTMLButtonElement>("#check-updates-button");
+      document.querySelector<HTMLButtonElement>(
+        "#check-updates-button",
+      );
 
-    checkUpdatesButton?.addEventListener("click", checkForUpdates);
+    checkUpdatesButton?.addEventListener(
+      "click",
+      checkForUpdates,
+    );
 
     analyzeDirectoryButton?.addEventListener(
       "click",
-      analyzeSelectedDirectory
+      analyzeSelectedDirectory,
     );
 
     try {
@@ -1085,35 +1289,37 @@ window.addEventListener(
           "scan_workspace",
           {
             paths: [desktop],
-          }
+          },
         );
 
       const appStatusEl =
         document.querySelector(
-          "#app-status"
+          "#app-status",
         );
 
       if (appStatusEl) {
         appStatusEl.textContent =
-          `🟢 ${appInfo as string} pronto`;
+          `🟢 ${appInfo as string} ${t(
+            "appReady",
+          )}`;
       }
 
       renderWorkspace();
     } catch (error) {
       console.error(
-        "Erro ao carregar o FileStru:",
-        error
+        t("appLoadError"),
+        error,
       );
 
       const appStatusEl =
         document.querySelector(
-          "#app-status"
+          "#app-status",
         );
 
       if (appStatusEl) {
         appStatusEl.textContent =
-          "❌ Não foi possível carregar o workspace.";
+          t("workspaceLoadFailed");
       }
     }
-  }
+  },
 );
