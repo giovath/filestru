@@ -80,6 +80,12 @@ pub fn build_type_based_plan(source: &str, items: &[crate::FileSystemItem]) -> O
             _ => "Outros",
         };
 
+        let source_directory_name = Path::new(source).file_name().and_then(|name| name.to_str());
+
+        if source_directory_name == Some(directory_name) {
+            continue;
+        }
+
         let destination_directory = Path::new(source).join(directory_name);
 
         let destination_directory_string = destination_directory.to_string_lossy().to_string();
@@ -343,5 +349,20 @@ mod tests {
         assert_eq!(move_operation.status, OperationStatus::Conflict);
 
         assert!(move_operation.reason.contains("Conflito"));
+    }
+    #[test]
+    fn does_not_nest_category_directory_inside_itself() {
+        let items = vec![file_item(
+            "foto.jpg",
+            "C:\\Downloads\\Imagens\\foto.jpg",
+            Some("jpg"),
+            "C:\\Downloads\\Imagens",
+        )];
+
+        let plan = build_type_based_plan("C:\\Downloads\\Imagens", &items);
+
+        assert_eq!(plan.summary.files_to_move, 0);
+        assert_eq!(plan.summary.directories_to_create, 0);
+        assert!(plan.operations.is_empty());
     }
 }
