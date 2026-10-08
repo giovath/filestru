@@ -1021,6 +1021,13 @@ function renderOrganizationPlan(
             },
           );
 
+        void track("organization_executed", {
+          total: result.total,
+          executed: result.executed,
+          skipped: result.skipped,
+          failed: result.failed,
+        });
+
         console.log(
           t("executionResult"),
           result,
@@ -1055,6 +1062,8 @@ function renderOrganizationPlan(
           renderWorkspace();
         }
       } catch (error) {
+        void track("organization_failed");
+
         console.error(
           t("executionError"),
           error,
@@ -1120,7 +1129,17 @@ async function chooseDirectory(): Promise<void> {
           path: selectedPath,
         },
       );
+
+    void track("scan_completed", {
+      total_files:
+        selectedDirectoryScan.total_files,
+      total_directories:
+        selectedDirectoryScan.total_directories,
+      total_size:
+        selectedDirectoryScan.total_size,
+    });
   } catch (error) {
+    void track("scan_failed");
     console.error(
       t("scanSelectedFolderError"),
       error,
@@ -1172,6 +1191,15 @@ async function analyzeSelectedDirectory(): Promise<void> {
         },
       );
 
+    void track("plan_created", {
+      files_to_move:
+        organizationPlan.summary.files_to_move,
+      files_to_rename:
+        organizationPlan.summary.files_to_rename,
+      directories_to_create:
+        organizationPlan.summary.directories_to_create,
+    });
+
     selectedDirectoryScan =
       await invoke<ScanResult>(
         "scan_directory",
@@ -1185,6 +1213,8 @@ async function analyzeSelectedDirectory(): Promise<void> {
       organizationPlan,
     );
   } catch (error) {
+    void track("plan_failed");
+
     console.error(
       t("analyzeDirectoryError"),
       error,
